@@ -44,20 +44,17 @@ The [deployment workflow](.github/workflows/deploy.yml) automatically runs
 to `main`. It can also be started manually from the Actions tab.
 
 Before the first run, create a private S3 bucket for Terraform state and add
-these repository secrets under **Settings > Secrets and variables > Actions**:
+these secrets to the `copilot` environment under **Settings > Environments**:
 
 - `TF_STATE_BUCKET` — the S3 bucket name
 - `AWS_REGION` — optional; defaults to `eu-west-2`
+- `AWS_ACCESS_KEY_ID` — the IAM access key ID
+- `AWS_SECRET_ACCESS_KEY` — the IAM secret access key
 
-For authentication, preferably configure an AWS IAM role with a GitHub OIDC
-trust policy for this repository and add its ARN as the `AWS_ROLE_ARN` secret.
-Grant that role permission to read and write the state bucket and manage the
-Lambda, API Gateway, and IAM resources declared in
-[terraform/main.tf](terraform/main.tf). The workflow uses OIDC when
-`AWS_ROLE_ARN` is set. Alternatively, add `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY` secrets; `AWS_SESSION_TOKEN` is optional for temporary
-static credentials. Enable bucket versioning and block public access on the
-state bucket.
+The IAM user associated with these keys must be allowed to read and write the
+state bucket and manage the Lambda, API Gateway, and IAM resources declared in
+[terraform/main.tf](terraform/main.tf). Enable bucket versioning and block
+public access on the state bucket.
 
 If the existing local deployment should be managed by Actions, initialize the
 S3 backend and migrate the local state before the first push:
@@ -70,5 +67,12 @@ terraform init \
   -migrate-state
 ```
 
-Otherwise, the first workflow run will create a new Terraform state and may
-attempt to create resources that already exist.
+If AWS resources were created before the S3-backed state was configured,
+import each existing resource into this state before running the workflow.
+For example:
+
+```bash
+terraform import aws_iam_role.lambda laura-ipsum-python-lambda-role
+```
+
+Otherwise, Terraform may attempt to create resources that already exist.
