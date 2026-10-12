@@ -21,6 +21,7 @@ jobs:
   terraform:
     name: Terraform apply
     runs-on: ubuntu-latest
+    environment: copilot
     defaults:
       run:
         working-directory: terraform
