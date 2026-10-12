@@ -1,8 +1,8 @@
 # LauraIpsum
 
-This project deploys a small Python AWS Lambda function behind a public
-HTTP API. Opening the Terraform `application_url` output displays a greeting
-and the Python source used by the Lambda deployment.
+This project deploys the Go event service in [app/](app) to AWS ECS Fargate
+behind an Application Load Balancer. Opening the Terraform `event_service_url`
+output shows the service.
 
 ## Codespaces setup
 
@@ -24,10 +24,10 @@ cd terraform
 terraform init
 terraform plan
 terraform apply
-terraform output -raw application_url
+terraform output -raw event_service_url
 ```
 
-Open the printed URL in a browser to view the deployed Python code. To remove
+Open the printed URL in a browser to view the deployed service. To remove
 the AWS resources when finished:
 
 ```bash
@@ -52,8 +52,8 @@ these secrets to the `copilot` environment under **Settings > Environments**:
 - `AWS_SECRET_ACCESS_KEY` — the IAM secret access key
 
 The IAM user associated with these keys must be allowed to read and write the
-state bucket and manage the Lambda, API Gateway, and IAM resources declared in
-[terraform/main.tf](terraform/main.tf). Enable bucket versioning and block
+state bucket and manage the ECR, ECS, ALB, CloudWatch, and IAM resources declared in
+[terraform/event_service.tf](terraform/event_service.tf). Enable bucket versioning and block
 public access on the state bucket.
 
 If the existing local deployment should be managed by Actions, initialize the
@@ -69,12 +69,4 @@ terraform init \
 
 If AWS resources were created before the S3-backed state was configured,
 import each existing resource into this state before running the workflow.
-The repository also includes a manually triggered **Import existing Terraform
-resources** workflow that imports the existing Lambda IAM role:
-
-```bash
-terraform import aws_iam_role.lambda laura-ipsum-python-lambda-role
-```
-
-Alternatively, run that workflow from the repository's **Actions** tab.
 Otherwise, Terraform may attempt to create resources that already exist.
