@@ -35,4 +35,38 @@ terraform destroy
 ```
 
 Use `-var='aws_region=your-region'` with `plan`, `apply`, and `destroy` if you
-want a region other than `us-east-1`.
+want a region other than `eu-west-2`.
+
+## GitHub Actions deployment
+
+The [deployment workflow](.github/workflows/deploy.yml) automatically runs
+`terraform validate`, `terraform plan`, and `terraform apply` for every push
+to `main`. It can also be started manually from the Actions tab.
+
+Before the first run, create a private S3 bucket for Terraform state and add
+these repository secrets under **Settings > Secrets and variables > Actions**:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `TF_STATE_BUCKET` — the S3 bucket name
+- `AWS_REGION` — optional; defaults to `eu-west-2`
+- `AWS_SESSION_TOKEN` — optional, for temporary AWS credentials
+
+The AWS identity used by the workflow needs permission to read and write the
+state bucket and to manage the Lambda, API Gateway, and IAM resources declared
+in [terraform/main.tf](terraform/main.tf). Enable bucket versioning and block
+public access on the state bucket.
+
+If the existing local deployment should be managed by Actions, initialize the
+S3 backend and migrate the local state before the first push:
+
+```bash
+cd terraform
+terraform init \
+  -backend-config='bucket=YOUR_TF_STATE_BUCKET' \
+  -backend-config='region=eu-west-2' \
+  -migrate-state
+```
+
+Otherwise, the first workflow run will create a new Terraform state and may
+attempt to create resources that already exist.
