@@ -46,16 +46,18 @@ to `main`. It can also be started manually from the Actions tab.
 Before the first run, create a private S3 bucket for Terraform state and add
 these repository secrets under **Settings > Secrets and variables > Actions**:
 
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
 - `TF_STATE_BUCKET` — the S3 bucket name
 - `AWS_REGION` — optional; defaults to `eu-west-2`
-- `AWS_SESSION_TOKEN` — optional, for temporary AWS credentials
 
-The AWS identity used by the workflow needs permission to read and write the
-state bucket and to manage the Lambda, API Gateway, and IAM resources declared
-in [terraform/main.tf](terraform/main.tf). Enable bucket versioning and block
-public access on the state bucket.
+For authentication, preferably configure an AWS IAM role with a GitHub OIDC
+trust policy for this repository and add its ARN as the `AWS_ROLE_ARN` secret.
+Grant that role permission to read and write the state bucket and manage the
+Lambda, API Gateway, and IAM resources declared in
+[terraform/main.tf](terraform/main.tf). The workflow uses OIDC when
+`AWS_ROLE_ARN` is set. Alternatively, add `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` secrets; `AWS_SESSION_TOKEN` is optional for temporary
+static credentials. Enable bucket versioning and block public access on the
+state bucket.
 
 If the existing local deployment should be managed by Actions, initialize the
 S3 backend and migrate the local state before the first push:
