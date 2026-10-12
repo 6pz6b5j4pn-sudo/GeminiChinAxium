@@ -44,18 +44,29 @@ The [deployment workflow](.github/workflows/deploy.yml) automatically runs
 to `main`. It can also be started manually from the Actions tab.
 
 Before the first run, create a private S3 bucket for Terraform state and add
-these repository secrets under **Settings > Secrets and variables > Actions**:
+the `TF_STATE_BUCKET` repository secret under **Settings > Secrets and variables
+> Actions**. For AWS authentication, preferably configure GitHub OIDC:
+
+- Add an AWS IAM OIDC identity provider for `token.actions.githubusercontent.com`
+  if the account does not already have one.
+- Create an IAM role whose trust policy allows `sts:AssumeRoleWithWebIdentity`
+  for this repository's GitHub Actions subject, and whose permissions allow
+  access to the state bucket and the resources declared in
+  [terraform/main.tf](terraform/main.tf).
+- Add the role ARN as the `AWS_ROLE_ARN` repository secret.
+
+The workflow grants itself the GitHub OIDC token permission and assumes this
+role when `AWS_ROLE_ARN` is set. Alternatively, configure static credentials
+using these repository secrets:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
+- `AWS_SESSION_TOKEN` — optional, for temporary credentials
+
 - `TF_STATE_BUCKET` — the S3 bucket name
 - `AWS_REGION` — optional; defaults to `eu-west-2`
-- `AWS_SESSION_TOKEN` — optional, for temporary AWS credentials
 
-The AWS identity used by the workflow needs permission to read and write the
-state bucket and to manage the Lambda, API Gateway, and IAM resources declared
-in [terraform/main.tf](terraform/main.tf). Enable bucket versioning and block
-public access on the state bucket.
+Enable bucket versioning and block public access on the state bucket.
 
 If the existing local deployment should be managed by Actions, initialize the
 S3 backend and migrate the local state before the first push:
