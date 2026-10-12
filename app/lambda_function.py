@@ -1,6 +1,5 @@
 """A minimal public endpoint proving that the Python deployment is live."""
 
-
 def lambda_handler(event, context):
     return {
         "statusCode": 200,
