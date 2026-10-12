@@ -69,10 +69,12 @@ terraform init \
 
 If AWS resources were created before the S3-backed state was configured,
 import each existing resource into this state before running the workflow.
-For example:
+The repository also includes a manually triggered **Import existing Terraform
+resources** workflow that imports the existing Lambda IAM role:
 
 ```bash
 terraform import aws_iam_role.lambda laura-ipsum-python-lambda-role
 ```
 
+Alternatively, run that workflow from the repository's **Actions** tab.
 Otherwise, Terraform may attempt to create resources that already exist.
