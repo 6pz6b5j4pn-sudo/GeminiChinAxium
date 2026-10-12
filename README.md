@@ -1,4 +1,4 @@
-# LauraIpsum
+# Introduction
 
 A Go event service ([app/](app)) with a Dockerfile and Terraform that deploy it
 to AWS ECS Fargate behind an Application Load Balancer.
