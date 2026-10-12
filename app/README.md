@@ -58,6 +58,32 @@ The dashboard provides:
 
 Simply open the URL in your browser to visualize and interact with the event service.
 
+## Running with Docker
+
+The [Dockerfile](Dockerfile) is a multi-stage build: it compiles a static binary with the Go toolchain and copies it into a minimal Alpine image that runs as a non-root user. Configuration uses the same environment variables as above, and the container has a `HEALTHCHECK` on `/health`.
+
+```bash
+docker build -t event-service .
+docker run --rm -p 8080:8080 -e ENV=staging -e PROCESSING_DELAY_MS=500 event-service
+```
+
+If you change `PORT`, map it accordingly, e.g. `-e PORT=3000 -p 3000:3000`. On Apple Silicon, add `--platform linux/amd64` when building an image for ECS Fargate.
+
+## Improvements Made
+
+Changes made to the original starter code:
+
+- **Race-free idempotency**: `Store.SaveIfAbsent` checks and saves atomically, so two concurrent requests with the same `event_id` can no longer both be accepted.
+- **Snapshot reads**: `Store.List` returns sorted copies instead of live pointers, removing a data race with the worker and making output stable.
+- **Non-blocking enqueue**: when the 100-slot queue is full (or the worker is stopping), `POST /events` rolls the event back and returns `503` instead of hanging the request.
+- **Graceful shutdown**: on SIGTERM/SIGINT the HTTP server stops accepting requests (`http.Server.Shutdown`), then the worker drains queued events (10s limit). `Worker.Stop` is idempotent and `running` is an atomic flag (previously a data race).
+- **Server hardening**: read/write/idle timeouts and a 1 MiB request body limit.
+- **Startup errors**: a failed listen (e.g. port in use) now exits non-zero instead of the process waiting forever for a signal.
+- **Config validation**: negative `PROCESSING_DELAY_MS` is treated as 0.
+- **Containerization and infrastructure as code**: Dockerfile and Terraform (see the repository root README).
+
+Verified with `go vet`, a `-race` build, and a manual run covering 202, 409, processing and graceful shutdown. There are still no automated tests.
+
 ## API Endpoints
 
 ### GET /
@@ -101,7 +127,8 @@ Accepts an event for processing.
 **Responses:**
 - `202 Accepted` - Event accepted and queued for processing
 - `409 Conflict` - Event with this ID already exists
-- `400 Bad Request` - Invalid request body or missing event_id
+- `400 Bad Request` - Invalid request body or missing event_id (bodies over 1 MiB are rejected)
+- `503 Service Unavailable` - Processing queue is full or the service is shutting down; retry later with the same `event_id`
 
 ### GET /health
 
@@ -193,6 +220,7 @@ Press `Ctrl+C` in the terminal where the service is running.
 event-service/
 ├── go.mod                      # Go module definition
 ├── main.go                     # Application entry point, signal handling
+├── Dockerfile                  # Multi-stage container build
 ├── insomnia-collection.json    # Insomnia API client collection
 ├── internal/
 │   ├── app/
@@ -212,14 +240,13 @@ event-service/
 
 ### Known Limitations:
 - **No persistence**: All event state is stored in memory and will be lost on restart
+- **Single instance only**: State is per-instance, so run exactly one replica
 - **No structured logging**: Uses basic `log.Printf` statements
 - **No metrics or observability**: No instrumentation for monitoring
-- **No containerization**: No Dockerfile or container support
-- **No infrastructure as code**: No Terraform, Kubernetes manifests, etc.
 - **Limited error handling**: Basic error responses without detailed error types
 - **No rate limiting**: No protection against traffic spikes
 - **No authentication/authorization**: Endpoints are completely open
-- **Single instance only**: No support for horizontal scaling or distributed processing
 - **No dead letter queue**: Failed events are not captured or retried
+- **No automated tests**
 
 Candidates are expected to identify and address these gaps as part of the technical assessment.

@@ -1,15 +1,22 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"event-service/internal/model"
+	"event-service/internal/store"
+	"event-service/internal/worker"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"event-service/internal/model"
-	"event-service/internal/store"
-	"event-service/internal/worker"
 	"time"
+)
+
+const (
+	maxBodyBytes    = 1 << 20 // 1 MiB
+	shutdownTimeout = 10 * time.Second
 )
 
 // Config holds the application configuration
@@ -33,6 +40,10 @@ func LoadConfig() Config {
 	port := getEnv("PORT", "8080")
 	env := getEnv("ENV", "dev")
 	processingDelayMs := getEnvAsInt("PROCESSING_DELAY_MS", 1000)
+	if processingDelayMs < 0 {
+		log.Printf("Negative PROCESSING_DELAY_MS %d, using 0", processingDelayMs)
+		processingDelayMs = 0
+	}
 
 	return Config{
 		Port:              port,
@@ -65,21 +76,33 @@ func (a *App) Start() error {
 	mux.HandleFunc("/", a.handleFrontend)
 
 	a.server = &http.Server{
-		Addr:    ":" + a.config.Port,
-		Handler: mux,
+		Addr:              ":" + a.config.Port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	log.Printf("Starting server on port %s (env: %s)", a.config.Port, a.config.Env)
-	return a.server.ListenAndServe()
+	if err := a.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // Shutdown gracefully shuts down the application
 func (a *App) Shutdown() {
 	log.Println("Shutting down application...")
-	a.worker.Stop()
+	// Stop accepting new requests first, then drain the worker queue
 	if a.server != nil {
-		a.server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := a.server.Shutdown(ctx); err != nil {
+			log.Printf("HTTP server shutdown error: %v", err)
+		}
 	}
+	a.worker.Stop(shutdownTimeout)
 }
 
 // handleEvents handles POST /events (create) and GET /events (list)
@@ -105,6 +128,7 @@ func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req model.EventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Invalid request body: %v", err)
@@ -117,23 +141,26 @@ func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for idempotency
-	if a.store.Exists(req.EventID) {
-		log.Printf("Event already exists: %s", req.EventID)
-		w.WriteHeader(http.StatusConflict)
-		return
-	}
-
-	// Create and save event
+	// Atomic check-and-save keeps idempotency correct under concurrent requests
 	event := &model.Event{
 		EventID: req.EventID,
 		Payload: req.Payload,
 		Status:  model.StatusAccepted,
 	}
-	a.store.Save(event)
+	if !a.store.SaveIfAbsent(event) {
+		log.Printf("Event already exists: %s", req.EventID)
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
 
-	// Enqueue for background processing
-	a.worker.Enqueue(event)
+	// Enqueue for background processing; roll back if the queue is full so the
+	// client can retry with the same event_id
+	if !a.worker.Enqueue(event) {
+		a.store.Delete(req.EventID)
+		log.Printf("Queue unavailable, rejecting event: %s", req.EventID)
+		http.Error(w, "Service busy, retry later", http.StatusServiceUnavailable)
+		return
+	}
 
 	log.Printf("Event accepted: %s", req.EventID)
 	w.WriteHeader(http.StatusAccepted)

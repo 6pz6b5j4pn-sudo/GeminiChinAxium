@@ -1,10 +1,10 @@
 package main
 
 import (
+	"event-service/internal/app"
 	"log"
 	"os"
 	"os/signal"
-	"event-service/internal/app"
 	"syscall"
 )
 
@@ -22,15 +22,20 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Start server in a goroutine
+	serverErr := make(chan error, 1)
 	go func() {
-		if err := application.Start(); err != nil {
-			log.Printf("Server error: %v", err)
-		}
+		serverErr <- application.Start()
 	}()
 
-	// Wait for shutdown signal
-	sig := <-sigChan
-	log.Printf("Received signal: %v", sig)
+	// Wait for shutdown signal or a fatal server error (e.g. port in use)
+	select {
+	case sig := <-sigChan:
+		log.Printf("Received signal: %v", sig)
+	case err := <-serverErr:
+		if err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+	}
 
 	// Graceful shutdown
 	application.Shutdown()
