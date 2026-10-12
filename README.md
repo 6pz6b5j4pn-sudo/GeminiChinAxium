@@ -7,7 +7,7 @@ and the Python source used by the Lambda deployment.
 ## Codespaces setup
 
 The checked-in [devcontainer configuration](.devcontainer/devcontainer.json)
-installs Terraform and the AWS CLI. Configure `AWS_ACCESS_KEY_ID` and
+installs Terraform, the AWS CLI, and Git LFS. Configure `AWS_ACCESS_KEY_ID` and
 `AWS_SECRET_ACCESS_KEY` as Codespaces secrets, then rebuild the Codespace so
 the values are available in its terminal. An optional `AWS_SESSION_TOKEN` is
 also forwarded for temporary credentials.
